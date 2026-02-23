@@ -9,7 +9,7 @@ langchain-chroma
 langchain-groq
 
 chromadb
+sentence-transformers
 unstructured
 pypdf
-
-sentence-transformers
+groq
