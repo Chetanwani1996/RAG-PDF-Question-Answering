@@ -7,11 +7,6 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_groq import ChatGroq
 
-from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains import create_retrieval_chain
-
-# Load environment variables
 load_dotenv()
 
 working_dir = os.path.dirname(os.path.abspath(__file__))
@@ -54,26 +49,22 @@ def answer_question(user_question):
         persist_directory=os.path.join(working_dir, "doc_vectorstore")
     )
 
-    retriever = vectordb.as_retriever()
+    retriever = vectordb.as_retriever(search_kwargs={"k": 4})
 
-    # Prompt template
-    prompt = ChatPromptTemplate.from_template(
-        """Answer the question based only on the provided context.
+    docs = retriever.get_relevant_documents(user_question)
 
-        Context:
-        {context}
+    context = "\n\n".join([doc.page_content for doc in docs])
 
-        Question:
-        {input}
-        """
-    )
+    prompt = f"""
+    Answer the question based only on the provided context.
 
-    # Create document chain
-    document_chain = create_stuff_documents_chain(llm, prompt)
+    Context:
+    {context}
 
-    # Create retrieval chain
-    retrieval_chain = create_retrieval_chain(retriever, document_chain)
+    Question:
+    {user_question}
+    """
 
-    response = retrieval_chain.invoke({"input": user_question})
+    response = llm.invoke(prompt)
 
-    return response["answer"]
+    return response.content
