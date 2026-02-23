@@ -6,38 +6,34 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_groq import ChatGroq
-from langchain.chains.retrieval_qa.base import RetrievalQA
+
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_retrieval_chain
 
 # Load environment variables
 load_dotenv()
 
-# Working directory
 working_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Initialize Embedding model
+# Embedding model
 embedding = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
-# Initialize Groq LLM
+# Groq LLM
 llm = ChatGroq(
     model="llama-3.3-70b-versatile",
-    temperature=0,
+    temperature=0
 )
 
 
 def process_document_to_chroma_db(file_name):
-    """
-    Load PDF, split into chunks, and store in Chroma vector DB.
-    """
-
     file_path = os.path.join(working_dir, file_name)
 
-    # Load PDF
     loader = UnstructuredPDFLoader(file_path)
     documents = loader.load()
 
-    # Split text into chunks
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=150
@@ -45,7 +41,6 @@ def process_document_to_chroma_db(file_name):
 
     split_docs = text_splitter.split_documents(documents)
 
-    # Store in Chroma DB
     Chroma.from_documents(
         documents=split_docs,
         embedding=embedding,
@@ -54,11 +49,6 @@ def process_document_to_chroma_db(file_name):
 
 
 def answer_question(user_question):
-    """
-    Retrieve relevant chunks and generate answer using Groq.
-    """
-
-    # Load Chroma DB
     vectordb = Chroma(
         embedding_function=embedding,
         persist_directory=os.path.join(working_dir, "doc_vectorstore")
@@ -66,14 +56,24 @@ def answer_question(user_question):
 
     retriever = vectordb.as_retriever()
 
-    # Create Retrieval QA chain
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=False
+    # Prompt template
+    prompt = ChatPromptTemplate.from_template(
+        """Answer the question based only on the provided context.
+
+        Context:
+        {context}
+
+        Question:
+        {input}
+        """
     )
 
-    response = qa_chain.invoke({"query": user_question})
+    # Create document chain
+    document_chain = create_stuff_documents_chain(llm, prompt)
 
-    return response["result"]
+    # Create retrieval chain
+    retrieval_chain = create_retrieval_chain(retriever, document_chain)
+
+    response = retrieval_chain.invoke({"input": user_question})
+
+    return response["answer"]
